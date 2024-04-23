@@ -1,26 +1,82 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, g, jsonify, send_file
 from werkzeug.utils import secure_filename
-import sqlite3
-import hashlib
 import os
 import requests
 import datetime
 import uuid
-from geopy.geocoders import Nominatim
 import csv
 import io
-import logging
+import hashlib
+from geopy.geocoders import Nominatim
+import sqlite3
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-DATABASE_PATH = 'C:/Users/ap94221/info8000/labs-alipirhadits/lab6/database/geolocated_reports.db'
-UPLOAD_FOLDER = 'C:/Users/ap94221/info8000/labs-alipirhadits/lab6/database/UPLOAD_FOLDER'
+# Define the full path to the database file within the test folder
+DATABASE_PATH = os.path.join('test', 'geolocated_reports.db')
 
+# Define the upload folder path
+UPLOAD_FOLDER = os.path.join('test', 'UPLOAD_FOLDER')
+
+# Ensure that the test folder exists
+if not os.path.exists('test'):
+    os.makedirs('test')
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+# Database connection function
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = getattr(g, '_database', None)
+    if conn is None:
+        conn = g._database = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
     return conn
+
+# Database initialization function (if needed)
+def init_db():
+    with app.app_context():
+        conn = get_db_connection()
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                user_identifier TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                api_key TEXT NOT NULL
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                datetime_entry TIMESTAMP NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                state TEXT,
+                county TEXT,
+                description TEXT,
+                filename TEXT,
+                ip_address TEXT NOT NULL,
+                weather TEXT,
+                temperature REAL,
+                humidity REAL,
+                wind_speed REAL,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+# Initialize the database
+init_db()
+
+# Hash password function
+def hash_password(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+# Other database-related functions here...
 
 @app.before_request
 def before_request():
@@ -28,21 +84,14 @@ def before_request():
 
 @app.teardown_request
 def teardown_request(exception):
-    if hasattr(g, 'db'):
-        g.db.close()
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
 geolocator = Nominatim(user_agent="geoapiExercises")
 
-def init_db():
-    with app.app_context():
-        conn = get_db_connection()
-        with app.open_resource('schema.sql', mode='r') as f:
-            conn.cursor().executescript(f.read())
-        conn.commit()
-        conn.close()
-
 def get_user_id(username):
-    conn = sqlite3.connect('C:/Users/ap94221/info8000/labs-alipirhadits/lab6/database/geolocated_reports.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT id FROM users WHERE user_identifier = ?
@@ -182,16 +231,15 @@ def user_dashboard(username):
 
     else:
         # Query the database for the reports that belong to the current user
-        conn = sqlite3.connect('C:/Users/ap94221/info8000/labs-alipirhadits/lab6/database/geolocated_reports.db')
-        cursor = conn.cursor()
+        cursor = g.db.cursor()
         cursor.execute('''
             SELECT * FROM reports WHERE user_id = ?
         ''', (get_user_id(username),))
         reports = cursor.fetchall()
-        conn.close()
 
         # Render the user dashboard template
         return render_template('user_dashboard.html', username=username, reports=reports)
+
 
 @app.route('/logout')
 def logout():
@@ -289,16 +337,11 @@ def get_reports():
     else:
         # Render HTML template with reports
         return render_template('report.html', reports=reports)
-    
+
 @app.route('/ip_details/<ip_address>')
 def show_ip_details(ip_address):
     # Logic to handle IP address details
     return render_template('ip_details.html', ip_address=ip_address)
-
-
-
-def hash_password(password):
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
