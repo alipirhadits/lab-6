@@ -227,6 +227,7 @@ def user_dashboard(username):
         # Render the user dashboard template
         return render_template('user_dashboard.html', username=username, reports=reports)
 
+
 @app.route('/logout')
 def logout():
     return redirect(url_for('login'))
