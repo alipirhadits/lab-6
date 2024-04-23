@@ -15,12 +15,14 @@ app.secret_key = os.urandom(24)
 
 # Define your database path and upload folder
 DATABASE_PATH = 'geolocated_reports.db'
-UPLOAD_FOLDER = 'UPLOAD_FOLDER'
+UPLOAD_FOLDER = 'UPLOAD_FOLDER'  # Update this path to a valid one on your virtual machine
 
 # Database connection function
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = getattr(g, '_database', None)
+    if conn is None:
+        conn = g._database = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
     return conn
 
 # Database initialization function (if needed)
@@ -30,7 +32,6 @@ def init_db():
         with app.open_resource('schema.sql', mode='r') as f:
             conn.cursor().executescript(f.read())
         conn.commit()
-        conn.close()
 
 # Hash password function
 def hash_password(password):
@@ -44,10 +45,11 @@ def before_request():
 
 @app.teardown_request
 def teardown_request(exception):
-    if hasattr(g, 'db'):
-        g.db.close()
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-UPLOAD_FOLDER = 'C:/Users/ap94221/info8000/labs-alipirhadits/test'
+UPLOAD_FOLDER = 'test'
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE_PATH)
@@ -74,7 +76,7 @@ def init_db():
         conn.close()
 
 def get_user_id(username):
-    conn = sqlite3.connect('C:/Users/ap94221/info8000/labs-alipirhadits/geolocated_reports.db')
+    conn = sqlite3.connect('geolocated_reports.db')
     cursor = conn.cursor()
     cursor.execute('''
         SELECT id FROM users WHERE user_identifier = ?
@@ -214,7 +216,7 @@ def user_dashboard(username):
 
     else:
         # Query the database for the reports that belong to the current user
-        conn = sqlite3.connect('C:/Users/ap94221/info8000/labs-alipirhadits/geolocated_reports.db')
+        conn = sqlite3.connect('geolocated_reports.db')
         cursor = conn.cursor()
         cursor.execute('''
             SELECT * FROM reports WHERE user_id = ?
