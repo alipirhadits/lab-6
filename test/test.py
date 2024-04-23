@@ -323,12 +323,11 @@ def get_reports():
     else:
         # Render HTML template with reports
         return render_template('report.html', reports=reports)
-    
+
 @app.route('/ip_details/<ip_address>')
 def show_ip_details(ip_address):
     # Logic to handle IP address details
     return render_template('ip_details.html', ip_address=ip_address)
-
 
 
 def hash_password(password):
