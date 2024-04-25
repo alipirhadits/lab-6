@@ -17,14 +17,11 @@ app.secret_key = os.urandom(24)
 DATABASE_PATH = os.path.join('test', 'geolocated_reports.db')
 
 # Define the upload folder path
-UPLOAD_FOLDER = os.path.join('test', 'UPLOAD_FOLDER')
+#UPLOAD_FOLDER = os.path.join('test', 'UPLOAD_FOLDER')
 
 # Ensure that the test folder exists
 if not os.path.exists('test'):
     os.makedirs('test')
-
-app = Flask(__name__)
-app.secret_key = os.urandom(24)
 
 # Database connection function
 def get_db_connection():
@@ -34,49 +31,52 @@ def get_db_connection():
         conn.row_factory = sqlite3.Row
     return conn
 
-# Database initialization function (if needed)
+# Database initialization function
 def init_db():
     with app.app_context():
         conn = get_db_connection()
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                user_identifier TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                api_key TEXT NOT NULL
-            )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                datetime_entry TIMESTAMP NOT NULL,
-                latitude REAL NOT NULL,
-                longitude REAL NOT NULL,
-                state TEXT,
-                county TEXT,
-                description TEXT,
-                filename TEXT,
-                ip_address TEXT NOT NULL,
-                weather TEXT,
-                temperature REAL,
-                humidity REAL,
-                wind_speed REAL,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        ''')
-        conn.commit()
-        conn.close()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    user_identifier TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    api_key TEXT NOT NULL
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    datetime_entry TIMESTAMP NOT NULL,
+                    latitude REAL NOT NULL,
+                    longitude REAL NOT NULL,
+                    state TEXT,
+                    county TEXT,  
+                    description TEXT,
+                    filename TEXT,
+                    ip_address TEXT NOT NULL,
+                    weather TEXT,
+                    temperature REAL,
+                    humidity REAL,
+                    wind_speed REAL,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+            conn.commit()
+            print("Database initialization successful")
+        except sqlite3.Error as e:
+            print("Error initializing database:", e)
+            conn.rollback()
+        finally:
+            conn.close()
 
 # Initialize the database
 init_db()
 
-# Hash password function
-def hash_password(password):
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
-# Other database-related functions here...
+# Hash password function and other database-related functions...
 
 @app.before_request
 def before_request():
@@ -87,8 +87,6 @@ def teardown_request(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
-
-geolocator = Nominatim(user_agent="geoapiExercises")
 
 def get_user_id(username):
     conn = sqlite3.connect(DATABASE_PATH)
@@ -122,7 +120,44 @@ def get_weather(latitude, longitude):
         print("Error fetching weather data:", e)
         return None
 
-def save_report(user_id, latitude, longitude, state, county, description, filename, ip_address, weather, temperature, humidity, wind_speed):
+geolocator = Nominatim(user_agent="test.py/1.0 (Contact: ali.pirhadi@uga.edu) Geocoding Requests")
+
+def get_location_details(latitude, longitude):
+    location = geolocator.reverse((latitude, longitude), exactly_one=True)
+    if location:
+        address = location.address.split(', ')
+        state = address[-2]
+        country = address[-1]
+        return state, country
+    else:
+        return None, None
+
+
+def reverse_geocode(latitude, longitude):
+    location = geolocator.reverse((latitude, longitude), exactly_one=True)
+    if location:
+        address = location.raw['address']
+        state = address.get('state', 'N/A')
+        county = address.get('county', 'N/A')
+        return state, county
+    else:
+        return 'N/A', 'N/A'
+
+def save_report(user_id, latitude, longitude, description, filename, ip_address):
+    # Get state and county from reverse geocoding
+    state, county = reverse_geocode(latitude, longitude)
+    
+    # Get weather data from the API
+    weather_data = get_weather(latitude, longitude)
+    if weather_data:
+        _, _, weather, temperature, humidity, wind_speed = weather_data
+    else:
+        # If weather data is not available, set default values or handle the error as needed
+        weather = "N/A"
+        temperature = "N/A"
+        humidity = "N/A"
+        wind_speed = "N/A"
+
     print("User ID:", user_id)
     print("Latitude:", latitude)
     print("Longitude:", longitude)
@@ -161,8 +196,13 @@ def save_report(user_id, latitude, longitude, state, county, description, filena
         # Close database connection
         conn.close()
 
+
 @app.route('/', methods=['GET', 'POST'])
 def login():
+    def hash_password(password):
+        # Define the hash_password function here
+        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
     if request.method == 'POST':
         submit = request.form.get('submit')
         username = request.form.get('username')
@@ -192,53 +232,36 @@ def login():
 
     return render_template('login.html')
 
+
+
 @app.route('/home/<username>', methods=['GET', 'POST'])
 def user_dashboard(username):
     if request.method == 'POST':
         # Handle report submission
-        gps_coordinates = request.form.get('gps_coordinates')
-        if gps_coordinates:
-            latitude, longitude = split_coordinates(gps_coordinates)
-        else:
-            flash('GPS coordinates are required')
-            return redirect(url_for('user_dashboard', username=username))
-
-        description = request.form.get('description')
-        file = request.files.get('file')
-        state = request.form.get('state')
-        county = request.form.get('county')
-        weather = request.form.get('weather')
-        temperature = request.form.get('temperature')
-        humidity = request.form.get('humidity')
-        wind_speed = request.form.get('wind_speed')
-
-        # Retrieve user_id based on username
-        user_id = get_user_id(username)
-        print("User ID:", user_id)  # Debugging output
-
-        if user_id is None:
-            flash('User ID not found')
-            return redirect(url_for('login'))
-
-        # Print user_id before calling save_report function
-        print("User ID before saving report:", user_id)
-
-        # Save the report to the database
-        save_report(user_id, latitude, longitude, state, county, description, file.filename if file else None, request.remote_addr, weather, temperature, humidity, wind_speed)
-
-        flash('Report submitted successfully')
-        return redirect(url_for('user_dashboard', username=username))
-
+        # Placeholder: Add code for report submission...
+        pass
     else:
-        # Query the database for the reports that belong to the current user
+        # Retrieve user details including the API key
         cursor = g.db.cursor()
         cursor.execute('''
+            SELECT id, api_key FROM users WHERE user_identifier = ?
+        ''', (username,))
+        user_data = cursor.fetchone()
+        
+        if not user_data:
+            flash('User not found')
+            return redirect(url_for('login'))
+        
+        user_id, api_key = user_data
+        
+        # Query the database for the reports that belong to the current user
+        cursor.execute('''
             SELECT * FROM reports WHERE user_id = ?
-        ''', (get_user_id(username),))
+        ''', (user_id,))
         reports = cursor.fetchall()
 
-        # Render the user dashboard template
-        return render_template('user_dashboard.html', username=username, reports=reports)
+        # Render the user dashboard template with the API key
+        return render_template('user_dashboard.html', username=username, api_key=api_key, reports=reports)
 
 
 @app.route('/logout')
@@ -253,10 +276,17 @@ def report():
     latitude = request.form.get('latitude')
     longitude = request.form.get('longitude')
     state = request.form.get('state')
-    county = request.form.get('county')
+    county = request.form.get('county')  
     description = request.form.get('description')
     file = request.files.get('file')
     ip_address = request.form.get('ip_address')
+
+    # Check if a file was uploaded
+    if file:
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(filename))
+    else:
+        filename = None
 
     # Retrieve user_id based on username
     user_id = get_user_id(username)
@@ -267,21 +297,24 @@ def report():
     # Retrieve weather data using latitude and longitude
     weather_data = get_weather(latitude, longitude)
     if weather_data:
-        _, _, weather, temperature, humidity, wind_speed = weather_data
-
-        # Save the file
-        filename = None
-        if file:
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(UPLOAD_FOLDER, filename))
+        state, county, weather, temperature, humidity, wind_speed = weather_data
 
         # Save the report to the database
-        save_report(user_id, latitude, longitude, state, county, description, filename, ip_address, weather, temperature, humidity, wind_speed)
+        save_report(user_id, latitude, longitude, description, filename, ip_address)
         flash('Report submitted successfully')
     else:
-        flash("Failed to retrieve weather data. Please try again.")
+        # If weather data retrieval failed, set default values for weather
+        weather = "N/A"
+        temperature = 0.0
+        humidity = 0.0
+        wind_speed = 0.0
+
+        # Save the report to the database
+        save_report(user_id, latitude, longitude, description, filename, ip_address)
+        flash("Failed to retrieve weather data. Report submitted with default weather values.")
 
     return redirect(url_for('login'))
+
 
 # New endpoint for retrieving reports data
 @app.route('/data', methods=['GET'])
@@ -294,6 +327,8 @@ def get_reports():
     dist = request.args.get('dist')
     max_reports = int(request.args.get('max')) if request.args.get('max') else None
     sort_order = request.args.get('sort', 'newest')
+    state = request.args.get('state')  # Add state parameter
+    county = request.args.get('county')  # Add county parameter
 
     # Query the database based on provided parameters
     query = "SELECT * FROM reports WHERE 1=1"
@@ -308,6 +343,12 @@ def get_reports():
     if lat and lng and dist:
         query += " AND ((latitude - ?) * (latitude - ?) + (longitude - ?) * (longitude - ?)) <= ? * ?"
         params.extend([lat, lat, lng, lng, dist, dist])
+    if state:
+        query += " AND state = ?"
+        params.append(state)
+    if county:
+        query += " AND county = ?"
+        params.append(county)
 
     if sort_order == 'newest':
         query += " ORDER BY datetime_entry DESC"
@@ -342,6 +383,7 @@ def get_reports():
 def show_ip_details(ip_address):
     # Logic to handle IP address details
     return render_template('ip_details.html', ip_address=ip_address)
+
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
