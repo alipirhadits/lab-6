@@ -62,8 +62,10 @@
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
             <button type="submit" name="submit" value="Login">Login</button>
-            <button type="submit" name="submit" value="Register">Register</button>
         </form>
+        <p>
+            Don't have an account? <a href="{{ url_for('register') }}">Create new account</a>
+        </p>
     </div>
 </body>
 </html>

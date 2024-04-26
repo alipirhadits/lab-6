@@ -65,8 +65,12 @@
 <body>
     <h1>Welcome, {{ username }}</h1>
     <p>Your API Key: {{ api_key }}</p>
+    <h3>Your GPS Location</h3>
+    <p>Latitude: <span id="displayLatitude"></span></p>
+    <p>Longitude: <span id="displayLongitude"></span></p>
+
     <h3>Create a New Report</h3>
-    <form action="/report" method="POST" enctype="multipart/form-data">
+    <form id="reportForm" action="/report" method="POST" enctype="multipart/form-data">
         <input type="hidden" name="username" value="{{ username }}">
         <div>
             <label for="latitude">Latitude:</label>
@@ -77,27 +81,42 @@
             <input type="text" id="longitude" name="longitude" placeholder="Enter Longitude" required>
         </div>
         <div>
-            <label for="state">State:</label>
-            <input type="text" id="state" name="state" placeholder="Enter State" required>
-        </div>
-        <div>
-            <label for="county">County:</label>
-            <input type="text" id="county" name="county" placeholder="Enter County" required>
-        </div>
-        <div>
-            <label for="description">Description:</label>
             <textarea id="description" name="description" rows="4" placeholder="Enter Description" required></textarea>
+        </div>
+        <div>
+            <input type="hidden" id="description_category" name="description_category">
         </div>
         <div>
             <label for="file">Upload File:</label>
             <input type="file" id="file" name="file">
         </div>
-        <div>
-            <label for="ip_address">IP Address:</label>
-            <input type="text" id="ip_address" name="ip_address" placeholder="Enter IP Address" required>
-        </div>
         <button type="submit">Submit</button>
     </form>
     <a href="{{ url_for('logout') }}">Logout</a>
+
+    <script>
+        // Fetch latitude, longitude, and IP address using browser APIs
+        window.addEventListener('load', () => {
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const latitude = position.coords.latitude;
+                    const longitude = position.coords.longitude;
+                    document.getElementById('latitude').value = latitude;
+                    document.getElementById('longitude').value = longitude;
+
+                    // Display latitude and longitude on the dashboard
+                    document.getElementById('displayLatitude').textContent = latitude;
+                    document.getElementById('displayLongitude').textContent = longitude;
+                });
+            }
+
+            fetch('https://api.ipify.org?format=json')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('ip_address').value = data.ip;
+                });
+        });
+    </script>
 </body>
 </html>
+

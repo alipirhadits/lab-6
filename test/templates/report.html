@@ -4,64 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports</title>
+    <!-- Add Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-KyZXEAg3QhqLMpG8r+Knujsl7/1L_dstPt3HV5HzF6Gvk/e3s4Wz6iJgD/+ub2oU" crossorigin="anonymous">
     <style>
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid #ddd;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
         }
-        th, td {
-            padding: 8px;
+        table.data-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        table.data-table th,
+        table.data-table td {
             border: 1px solid #ddd;
+            padding: 12px;
+        }
+        table.data-table th {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
             text-align: left;
         }
-        th {
-            background-color: #f2f2f2;
+        table.data-table tr:nth-child(even) {
+            background-color: #f9f9f9;
         }
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
+        table.data-table tr:hover {
+            background-color: #e9ecef;
+        }
+        table.data-table td {
+            color: #333;
         }
     </style>
 </head>
 <body>
-    <h1>Reports</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>User ID</th>
-                <th>Date Time</th>
-                <th>Latitude</th>
-                <th>Longitude</th>
-                <th>State</th>
-                <th>County</th>
-                <th>Description</th>
-                <th>Filename</th>
-                <th>IP Address</th>
-                <th>Weather</th>
-                <th>Temperature</th>
-                <th>Humidity</th>
-                <th>Wind Speed</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for report in reports %}
-            <tr>
-                <td>{{ report['user_id'] }}</td>
-                <td>{{ report['datetime_entry'] }}</td>
-                <td>{{ report['latitude'] }}</td>
-                <td>{{ report['longitude'] }}</td>
-                <td>{{ report['state'] }}</td>
-                <td>{{ report['county'] }}</td>
-                <td>{{ report['description'] }}</td>
-                <td>{{ report['filename'] }}</td>
-                <td><a href="/ip_details/{{ report['ip_address'] }}">{{ report['ip_address'] }}</a></td>
-                <td>{{ report['weather'] }}</td>
-                <td>{{ report['temperature'] }}</td>
-                <td>{{ report['humidity'] }}</td>
-                <td>{{ report['wind_speed'] }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="container">
+        <h1 class="text-center mb-4">Reports</h1>
+        <table class="table table-bordered table-striped data-table">
+            <thead>
+                <tr>
+                    <th>User ID</th>
+                    <th>Date Time</th>
+                    <th>Latitude</th>
+                    <th>Longitude</th>
+                    <th>State</th>
+                    <th>County</th>
+                    <th>Description</th>
+                    <th>Description Category</th>
+                    <th>Filename</th>
+                    <th>IP Address</th>
+                    <th>Weather</th>
+                    <th>Temperature</th>
+                    <th>Humidity</th>
+                    <th>Wind Speed</th>
+                    <th>Download File</th> <!-- New column for download link -->
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td>{{ report['user_id'] }}</td>
+                    <td>{{ report['datetime_entry'] }}</td>
+                    <td>{{ report['latitude'] }}</td>
+                    <td>{{ report['longitude'] }}</td>
+                    <td>{{ report['state'] }}</td>
+                    <td>{{ report['county'] }}</td>
+                    <td>{{ report['description'] }}</td>
+                    <td>{{ report['description_category'] }}</td>
+                    <td>{{ report['filename'] }}</td>
+                    <td><a href="{{ url_for('show_ip_address_details', ip_address=report['ip_address']) }}">{{ report.ip_address }}</a></td>
+                    <td>{{ report['weather'] }}</td>
+                    <td>{{ report['temperature'] }}</td>
+                    <td>{{ report['humidity'] }}</td>
+                    <td>{{ report['wind_speed'] }}</td>
+                    <td><a href="{{ url_for('download_file', filename=report['filename']) }}">Download</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Add Bootstrap JS (optional) -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js" integrity="sha384-oBqDVmMz4fnFO9gybBud7TlRbs/ic4AwGcFZOxg5DpPt8EgeUIgIwzjWfXQKWA3" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
 </body>
 </html>
