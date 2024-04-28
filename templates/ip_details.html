@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Address Location</title>
+    <!-- Include Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" crossorigin=""/>
+    <!-- Include Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+
+    <style>
+        /* Reset default margin and padding */
+        body, h1, p {
+            margin: 0;
+            padding: 0;
+        }
+        /* Set full height for map container */
+        body {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #cce5ff; /* Blue */
+        }
+        /* Style the header */
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        /* Style the paragraph */
+        p {
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+        /* Style the map container */
+        #map {
+            width: 85%;
+            height: 70vh;
+            border: 2px solid #ccc;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <h1>Location Details for IP Address: {{ ip_address }}</h1>
+        <p>Latitude: {{ latitude }}</p>
+        <p>Longitude: {{ longitude }}</p>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        var latitude = {{ latitude }};
+        var longitude = {{ longitude }};
+
+        var map = L.map('map');
+
+        map.setView([latitude, longitude], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: 'Map data © <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        L.marker([latitude, longitude]).addTo(map)
+            .bindPopup('Location: ' + latitude + ', ' + longitude)
+            .openPopup();
+    </script>
+</body>
+</html>

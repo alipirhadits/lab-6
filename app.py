@@ -1,6 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, g, jsonify, send_file
-from werkzeug.utils import secure_filename
 import os
+import sqlite3
 import requests
 import datetime
 import uuid
@@ -8,24 +7,19 @@ import csv
 import io
 import hashlib
 from geopy.geocoders import Nominatim
-import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, flash, g, jsonify, send_file, send_from_directory
+from werkzeug.utils import secure_filename
 from transformers import pipeline
-from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Define the full path to the database file within the test folder
 DATABASE_PATH = os.path.join('test', 'geolocated_reports.db')
+photo = os.path.join('test', 'photo')
 
-# Define the upload folder path
-UPLOAD_FOLDER = os.path.join('test', 'UPLOAD_FOLDER')
-
-# Ensure that the test folder exists
 if not os.path.exists('test'):
     os.makedirs('test')
 
-# Database connection function
 def get_db_connection():
     conn = getattr(g, '_database', None)
     if conn is None:
@@ -33,7 +27,6 @@ def get_db_connection():
         conn.row_factory = sqlite3.Row
     return conn
 
-# Database initialization function
 def init_db():
     with app.app_context():
         conn = get_db_connection()
@@ -51,7 +44,7 @@ def init_db():
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
                     datetime_entry TIMESTAMP NOT NULL,
                     latitude REAL NOT NULL,
                     longitude REAL NOT NULL,
@@ -64,11 +57,9 @@ def init_db():
                     temperature REAL,
                     humidity REAL,
                     wind_speed REAL,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
+                    description_category TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (user_identifier)
                 )
-            ''')
-            cursor.execute('''
-                ALTER TABLE reports ADD COLUMN description_category TEXT
             ''')
             conn.commit()
             print("Database initialization successful")
@@ -77,6 +68,45 @@ def init_db():
             conn.rollback()
         finally:
             conn.close()
+
+init_db()
+
+def save_report(username, latitude, longitude, description, description_category, filename, ip_address):
+    print("Username:", username)  # Debugging print statement
+
+    state, county = reverse_geocode(latitude, longitude)
+    description_category = characterize_description(description)
+    weather_data = get_weather(latitude, longitude)
+    if weather_data:
+        _, _, weather, temperature, humidity, wind_speed = weather_data
+    else:
+        weather = "N/A"
+        temperature = "N/A"
+        humidity = "N/A"
+        wind_speed = "N/A"
+
+    datetime_entry = datetime.datetime.now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    user_id = get_user_id(username)
+    print("User ID:", user_id)  # Debugging print statement
+
+    try:
+        cursor.execute('''
+            INSERT INTO reports (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed))
+
+        conn.commit()
+        print("Report saved successfully")
+    except Exception as e:
+        print("Error:", e)
+        conn.rollback()
+    finally:
+        conn.close()
+
 
 # Initialize the database
 init_db()
@@ -95,7 +125,7 @@ def teardown_request(exception):
 
 @app.route('/download/<filename>', methods=['GET'])
 def download_file(filename):
-    directory = os.path.abspath(UPLOAD_FOLDER)
+    directory = os.path.abspath(photo)
     print("Directory:", directory)
     print("Requested Filename:", filename)
 
@@ -133,7 +163,7 @@ def get_weather(latitude, longitude):
             wind_speed = current_data.get("wind_speed_10m", "N/A")
             weather = current_data.get("weather_code", "N/A")
             state = current_data.get("state", "N/A")
-            county =            current_data.get("county", "N/A")
+            county = current_data.get("county", "N/A")
             return state, county, weather, temperature, humidity, wind_speed
         else:
             return None
@@ -167,69 +197,83 @@ def reverse_geocode(latitude, longitude):
 text_classification_model = pipeline("text-classification")
 
 def characterize_description(description):
-    # Use the language model to classify the description
     result = text_classification_model(description)
+    predicted_label = result[0]['label']
+    return predicted_label
 
     # Extract the predicted label and return it
     predicted_label = result[0]['label']
     return predicted_label
 
-def save_report(user_id, latitude, longitude, description, description_category, filename, ip_address):
-    # Get state and county from reverse geocoding
-    state, county = reverse_geocode(latitude, longitude)
+def save_report(username, latitude, longitude, description, description_category, filename, ip_address):
+    # Ensure username is not empty
+    if not username:
+        print("Error: Username cannot be empty")
+        return  # Exit the function if username is empty
 
-    # Automatically characterize the description
-    description_category = characterize_description(description)
+    # Retrieve the user_id using the username
+    user_id = username  # Using username as user_id
 
-    # Get weather data from the API
-    weather_data = get_weather(latitude, longitude)
-    if weather_data:
-        _, _, weather, temperature, humidity, wind_speed = weather_data
+    # Ensure that user_id is not None before proceeding
+    if user_id is not None:
+        # Get state and county from reverse geocoding
+        state, county = reverse_geocode(latitude, longitude)
+
+        # Automatically characterize the description
+        description_category = characterize_description(description)
+
+        # Get weather data from the API
+        weather_data = get_weather(latitude, longitude)
+        if weather_data:
+            _, _, weather, temperature, humidity, wind_speed = weather_data
+        else:
+            # If weather data is not available, set default values or handle the error as needed
+            weather = "N/A"
+            temperature = "N/A"
+            humidity = "N/A"
+            wind_speed = "N/A"
+
+        print("User ID:", user_id)
+        print("Latitude:", latitude)
+        print("Longitude:", longitude)
+        print("State:", state)
+        print("County:", county)
+        print("Description:", description)
+        print("Description Category:", description_category)
+        print("Filename:", filename)
+        print("IP Address:", ip_address)
+        print("Weather:", weather)
+        print("Temperature:", temperature)
+        print("Humidity:", humidity)
+        print("Wind Speed:", wind_speed)
+
+        # Get the current date and time
+        datetime_entry = datetime.datetime.now()
+
+        # Open database connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Execute SQL INSERT statement
+            cursor.execute('''
+                INSERT INTO reports (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed))
+
+            # Commit changes to the database
+            conn.commit()
+            print("Report saved successfully")
+        except Exception as e:
+            # Handle any exceptions
+            print("Error:", e)
+            conn.rollback()
+        finally:
+            # Close database connection
+            conn.close()
     else:
-        # If weather data is not available, set default values or handle the error as needed
-        weather = "N/A"
-        temperature = "N/A"
-        humidity = "N/A"
-        wind_speed = "N/A"
+        print("User not found for username:", username)
 
-    print("User ID:", user_id)
-    print("Latitude:", latitude)
-    print("Longitude:", longitude)
-    print("State:", state)
-    print("County:", county)
-    print("Description:", description)
-    print("Description Category:", description_category)
-    print("Filename:", filename)
-    print("IP Address:", ip_address)
-    print("Weather:", weather)
-    print("Temperature:", temperature)
-    print("Humidity:", humidity)
-    print("Wind Speed:", wind_speed)
-
-    # Get the current date and time
-    datetime_entry = datetime.datetime.now()
-
-    # Open database connection
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        # Execute SQL INSERT statement
-        cursor.execute('''
-            INSERT INTO reports (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, datetime_entry, latitude, longitude, state, county, description, description_category, filename, ip_address, weather, temperature, humidity, wind_speed))
-
-        # Commit changes to the database
-        conn.commit()
-        print("Report saved successfully")
-    except Exception as e:
-        # Handle any exceptions
-        print("Error:", e)
-        conn.rollback()
-    finally:
-        # Close database connection
-        conn.close()
 
 def get_reports_by_user_id(user_id):
     conn = get_db_connection()
@@ -240,6 +284,7 @@ def get_reports_by_user_id(user_id):
     reports = cursor.fetchall()
     conn.close()
     return reports
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -327,7 +372,6 @@ def logout():
 # Update /report route
 @app.route('/report', methods=['POST'])
 def report():
-    # Retrieve form data
     username = request.form.get('username')
     latitude = request.form.get('latitude')
     longitude = request.form.get('longitude')
@@ -337,42 +381,29 @@ def report():
     description_category = request.form.get('description_category')
     file = request.files.get('file')
 
-    # Get the IP address from the request object
     ip_address = request.remote_addr
 
-    # Check if a file was uploaded
     if file:
         filename = secure_filename(file.filename)
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        file.save(os.path.join(photo, filename))
     else:
         filename = None
 
-    # Retrieve user_id based on username
-    user_id = get_user_id(username)
-    if user_id is None:
-        flash('User ID not found')
-        return redirect(url_for('login'))
-
-    # Retrieve weather data using latitude and longitude
     weather_data = get_weather(latitude, longitude)
     if weather_data:
         state, county, weather, temperature, humidity, wind_speed = weather_data
-
-        # Save the report to the database
-        save_report(user_id, latitude, longitude, description, description_category, filename, ip_address)
+        save_report(username, latitude, longitude, description, description_category, filename, ip_address)
         flash('Report submitted successfully')
     else:
-        # If weather data retrieval failed, set default values for weather
         weather = "N/A"
         temperature = 0.0
         humidity = 0.0
         wind_speed = 0.0
-
-        # Save the report to the database
-        save_report(user_id, latitude, longitude, description, description_category, filename, ip_address)
+        save_report(username, latitude, longitude, description, description_category, filename, ip_address)
         flash("Failed to retrieve weather data. Report submitted with default weather values.")
 
     return redirect(url_for('login'))
+
 
 
 # New endpoint for retrieving reports data
@@ -390,7 +421,7 @@ def get_reports():
     county = request.args.get('county')
 
     # Query the database based on provided parameters
-    query = "SELECT * FROM reports WHERE 1=1"
+    query = "SELECT reports.*, users.name AS username FROM reports LEFT JOIN users ON reports.user_id = users.user_identifier WHERE 1=1"
     params = []
 
     if start_date:
@@ -438,12 +469,88 @@ def get_reports():
         # Render HTML template with reports
         return render_template('report.html', reports=reports)
 
+# New endpoint for saving reports in CSV format
+from flask import Response
+
+@app.route('/save_csv', methods=['GET'])
+def save_reports_csv():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    lat = request.args.get('lat')
+    lng = request.args.get('lng')
+    dist = request.args.get('dist')
+    max_reports = int(request.args.get('max')) if request.args.get('max') else None
+    sort_order = request.args.get('sort', 'newest')
+    state = request.args.get('state')
+    county = request.args.get('county')
+
+    # Query the database based on provided parameters
+    query = "SELECT reports.*, users.name AS username FROM reports LEFT JOIN users ON reports.user_id = users.user_identifier WHERE 1=1"
+    params = []
+
+    if start_date:
+        query += " AND datetime_entry >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND datetime_entry <= ?"
+        params.append(end_date)
+    if lat and lng and dist:
+        query += " AND ((latitude - ?) * (latitude - ?) + (longitude - ?) * (longitude - ?)) <= ? * ?"
+        params.extend([lat, lat, lng, lng, dist, dist])
+    if state:
+        query += " AND state = ?"
+        params.append(state)
+    if county:
+        query += " AND county = ?"
+        params.append(county)
+
+    if sort_order == 'newest':
+        query += " ORDER BY datetime_entry DESC"
+    elif sort_order == 'oldest':
+        query += " ORDER BY datetime_entry ASC"
+
+    if max_reports:
+        query += " LIMIT ?"
+        params.append(max_reports)
+
+    cursor = g.db.cursor()
+    cursor.execute(query, params)
+    reports = cursor.fetchall()
+
+    # Generate CSV file content
+    csv_output = io.StringIO()
+    csv_writer = csv.writer(csv_output)
+    csv_writer.writerow([i[0] for i in cursor.description])  # Write headers
+    csv_writer.writerows(reports)
+    csv_output.seek(0)
+
+    # Create a Response object with CSV data
+    response = Response(csv_output, mimetype='text/csv')
+    response.headers['Content-Disposition'] = 'attachment; filename=reports.csv'
+
+    return response
+
 @app.route('/ip_details/<ip_address>')
 def show_ip_address_details(ip_address):
-    print(f"IP Address: {ip_address}")  # Add this line
-    # Logic to handle IP address details
-    return render_template('ip_details.html', ip_address=ip_address)
+    print(f"IP Address: {ip_address}")
+
+    # Retrieve the report data from the database
+    cursor = g.db.cursor()
+    cursor.execute("SELECT * FROM reports WHERE ip_address = ?", (ip_address,))
+    result = cursor.fetchone()
+
+    print(f"Query result: {result}")
+
+    if result is None:
+        flash('IP Address not found')
+        return redirect(url_for('login'))
+
+    # Retrieve the latitude and longitude values from the result
+    latitude, longitude = result['latitude'], result['longitude']
+
+    # Pass the latitude and longitude values to the template
+    return render_template('ip_details.html', ip_address=ip_address, latitude=latitude, longitude=longitude)
+
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
-
